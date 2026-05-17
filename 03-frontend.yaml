@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-frontend
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: web-app
+  template:
+    metadata:
+      labels:
+        app: web-app
+    spec:
+      containers:
+      - name: java-web
+        image: asalinasuax/devops-web-project:v1
+        ports:
+        - containerPort: 8080
+        # CAMBIO CLAVE: Sobrescribimos el comando de inicio de Tomcat
+        # 1. Esperamos 5 segundos a que Tomcat empiece a descomprimir.
+        # 2. Copiamos el archivo del ConfigMap a la ruta real.
+        # 3. Lanzamos Tomcat normalmente (catalina.sh run).
+        command: ["/bin/sh", "-c"]
+        args:
+          - |
+            (sleep 30;
+             mkdir -p /opt/tomcat/webapps/devops-web-project/properties/;
+             cp /tmp/config/api-endpoints.properties /opt/tomcat/webapps/devops-web-project/properties/api-endpoints.properties;
+             echo "Configuración inyectada con éxito") &
+            exec /opt/tomcat/bin/catalina.sh run
+        volumeMounts:
+        # Montamos el ConfigMap en una ruta NEUTRAL (/tmp/config)
+        # Así no bloqueamos la descompresión del .war en /webapps
+        - name: config-source-volume
+          mountPath: /tmp/config/api-endpoints.properties
+          subPath: api-endpoints.properties
+      volumes:
+      - name: config-source-volume
+        configMap:
+          name: web-project-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web-service
+spec:
+  type: NodePort
+  selector:
+    app: web-app
+  ports:
+    - protocol: TCP
+      port: 8080
+      targetPort: 8080
